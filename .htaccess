@@ -1,0 +1,12 @@
+# VoucherReset - Apache Configuration
+
+# Protect sensitive directories
+<FilesMatch "\.(db|sqlite|sqlite3)$">
+    Deny from all
+</FilesMatch>
+
+# Prevent directory listing
+Options -Indexes
+
+# Default charset
+AddDefaultCharset UTF-8
