@@ -4,41 +4,30 @@
 (function () {
     'use strict';
 
-    // State
-    let selectedRouterId = null;
-    let selectedRouterName = '';
-    let isSubmitting = false;
+    var isSubmitting = false;
 
-    // DOM elements
-    const routerGrid = document.getElementById('router-grid');
-    const voucherForm = document.getElementById('voucher-form-wrapper');
-    const resultWrapper = document.getElementById('result-wrapper');
-    const selectedRouterLabel = document.getElementById('selected-router-name');
-    const voucherInput = document.getElementById('voucher-input');
-    const resetBtn = document.getElementById('reset-btn');
-    const resetForm = document.getElementById('reset-form');
-    const changeRouterBtn = document.getElementById('change-router-btn');
-    const tryAgainBtn = document.getElementById('try-again-btn');
+    var routerSelect = document.getElementById('router-select');
+    var statusIndicator = document.getElementById('router-status-indicator');
+    var voucherInput = document.getElementById('voucher-input');
+    var resetBtn = document.getElementById('reset-btn');
+    var resetForm = document.getElementById('reset-form');
+    var resultWrapper = document.getElementById('result-wrapper');
+    var tryAgainBtn = document.getElementById('try-again-btn');
 
-    // ---- Initialize ----
     function init() {
-        if (!routerGrid) return;
-
-        checkAllStatuses();
+        if (!routerSelect) return;
         bindEvents();
     }
 
-    // ---- Event Bindings ----
     function bindEvents() {
-        // Router card clicks
-        routerGrid.addEventListener('click', function (e) {
-            const card = e.target.closest('.router-card');
-            if (card) {
-                selectRouter(card);
+        routerSelect.addEventListener('change', function () {
+            var id = routerSelect.value;
+            if (id) {
+                checkStatus(id);
+                hideResult();
             }
         });
 
-        // Form submission
         if (resetForm) {
             resetForm.addEventListener('submit', function (e) {
                 e.preventDefault();
@@ -46,119 +35,46 @@
             });
         }
 
-        // Change router
-        if (changeRouterBtn) {
-            changeRouterBtn.addEventListener('click', function () {
-                deselectRouter();
-            });
-        }
-
-        // Try again
         if (tryAgainBtn) {
             tryAgainBtn.addEventListener('click', function () {
-                showForm();
+                hideResult();
+                resetForm.style.display = '';
+                voucherInput.value = '';
+                voucherInput.focus();
             });
         }
     }
 
-    // ---- Status Checks ----
-    function checkAllStatuses() {
-        const cards = routerGrid.querySelectorAll('.router-card');
-        cards.forEach(function (card) {
-            const id = card.dataset.id;
-            checkStatus(id, card);
-        });
-    }
-
-    function checkStatus(id, card) {
-        const dot = card.querySelector('.status-dot');
-        const label = card.querySelector('.router-status-label');
-
-        dot.className = 'status-dot checking';
-        label.textContent = 'Checking...';
+    function checkStatus(id) {
+        statusIndicator.innerHTML = '<span class="status-dot checking"></span><span class="status-text">Checking...</span>';
+        statusIndicator.classList.add('visible');
 
         fetch('api/status.php?id=' + encodeURIComponent(id))
             .then(function (res) { return res.json(); })
             .then(function (data) {
                 if (data.status === 'online') {
-                    dot.className = 'status-dot online';
-                    label.textContent = 'Online';
+                    statusIndicator.innerHTML = '<span class="status-dot online"></span><span class="status-text online">Online</span>';
                 } else {
-                    dot.className = 'status-dot offline';
-                    label.textContent = 'Offline';
+                    statusIndicator.innerHTML = '<span class="status-dot offline"></span><span class="status-text offline">Offline</span>';
                 }
             })
             .catch(function () {
-                dot.className = 'status-dot offline';
-                label.textContent = 'Offline';
+                statusIndicator.innerHTML = '<span class="status-dot offline"></span><span class="status-text offline">Offline</span>';
             });
     }
 
-    // ---- Router Selection ----
-    function selectRouter(card) {
-        // Remove active from all
-        routerGrid.querySelectorAll('.router-card').forEach(function (c) {
-            c.classList.remove('active');
-        });
-
-        card.classList.add('active');
-        selectedRouterId = card.dataset.id;
-        selectedRouterName = card.dataset.name;
-
-        showForm();
-    }
-
-    function deselectRouter() {
-        selectedRouterId = null;
-        selectedRouterName = '';
-        routerGrid.querySelectorAll('.router-card').forEach(function (c) {
-            c.classList.remove('active');
-        });
-        hideForm();
-        hideResult();
-    }
-
-    function showForm() {
-        if (selectedRouterLabel) {
-            selectedRouterLabel.textContent = selectedRouterName;
-        }
-        if (voucherInput) {
-            voucherInput.value = '';
-        }
-        if (voucherForm) {
-            voucherForm.classList.add('visible');
-        }
-        hideResult();
-
-        // Focus the input after animation
-        setTimeout(function () {
-            if (voucherInput) voucherInput.focus();
-        }, 100);
-    }
-
-    function hideForm() {
-        if (voucherForm) {
-            voucherForm.classList.remove('visible');
-        }
-    }
-
-    function hideResult() {
-        if (resultWrapper) {
-            resultWrapper.classList.remove('visible');
-        }
-    }
-
-    // ---- Reset Submission ----
     function handleReset() {
         if (isSubmitting) return;
 
+        var routerId = routerSelect.value;
         var voucher = voucherInput.value.trim();
-        if (!voucher) {
-            voucherInput.focus();
+
+        if (!routerId) {
+            routerSelect.focus();
             return;
         }
-
-        if (!selectedRouterId) {
+        if (!voucher) {
+            voucherInput.focus();
             return;
         }
 
@@ -167,7 +83,7 @@
         resetBtn.innerHTML = '<span class="spinner"></span> Processing...';
 
         var formData = new FormData();
-        formData.append('router_id', selectedRouterId);
+        formData.append('router_id', routerId);
         formData.append('voucher', voucher);
 
         fetch('api/reset.php', {
@@ -188,23 +104,20 @@
         .finally(function () {
             isSubmitting = false;
             resetBtn.disabled = false;
-            resetBtn.innerHTML = 'Reset Voucher';
+            resetBtn.innerHTML = 'Reset Now';
         });
     }
 
-    // ---- Results Display ----
     function showResult(data) {
-        hideForm();
+        resetForm.style.display = 'none';
 
         var resultCard = document.getElementById('result-card');
         var resultIcon = document.getElementById('result-icon');
         var resultTitle = document.getElementById('result-title');
         var resultMessage = document.getElementById('result-message');
 
-        // Set type class
         resultCard.className = 'result-card result-' + (data.type || 'error');
 
-        // Set icon and title based on type
         var icons = {
             success: '✅',
             expired: '❌',
@@ -225,13 +138,16 @@
 
         if (resultWrapper) {
             resultWrapper.classList.add('visible');
+            resultWrapper.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
-
-        // Scroll to result
-        resultWrapper.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
-    // ---- Boot ----
+    function hideResult() {
+        if (resultWrapper) {
+            resultWrapper.classList.remove('visible');
+        }
+    }
+
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', init);
     } else {

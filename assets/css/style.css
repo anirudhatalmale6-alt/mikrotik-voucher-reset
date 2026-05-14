@@ -139,106 +139,95 @@ main {
     letter-spacing: 1px;
 }
 
-/* ---- Router Grid ---- */
-.router-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 14px;
-    margin-bottom: 32px;
+/* ---- Router Select Dropdown ---- */
+.select-wrapper {
+    position: relative;
 }
 
-.router-card {
-    background: var(--bg-card);
+.select-wrapper select {
+    width: 100%;
+    padding: 14px 16px;
+    padding-right: 80px;
+    background: var(--bg-input);
     border: 1px solid var(--border-color);
-    border-radius: var(--radius);
-    padding: 18px 16px;
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-size: 16px;
+    font-family: inherit;
+    outline: none;
+    transition: border-color var(--transition);
+    appearance: none;
+    -webkit-appearance: none;
     cursor: pointer;
-    transition: all var(--transition);
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    user-select: none;
-    position: relative;
-    overflow: hidden;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%238888aa' stroke-width='2' fill='none'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 16px center;
 }
 
-.router-card::before {
-    content: '';
+.select-wrapper select:focus {
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 0 3px rgba(108, 92, 231, 0.15);
+}
+
+.select-wrapper select option {
+    background: var(--bg-card);
+    color: var(--text-primary);
+    padding: 8px;
+}
+
+.select-status {
     position: absolute;
-    inset: 0;
-    background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
-    opacity: 0;
-    transition: opacity var(--transition);
+    right: 40px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 12px;
+    font-weight: 500;
+    display: none;
+    align-items: center;
+    gap: 6px;
 }
 
-.router-card:hover {
-    border-color: var(--accent-primary);
-    transform: translateY(-2px);
-    box-shadow: var(--shadow);
+.select-status.visible {
+    display: flex;
 }
 
-.router-card:hover::before {
-    opacity: 0.08;
-}
-
-.router-card.active {
-    border-color: var(--accent-primary);
-    background: var(--bg-card-hover);
-    box-shadow: 0 0 0 1px var(--accent-primary), var(--shadow);
-}
-
-.router-card.active::before {
-    opacity: 0.12;
-}
-
-.router-card .status-dot {
-    width: 12px;
-    height: 12px;
+.select-status .status-dot {
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
-    flex-shrink: 0;
-    position: relative;
-    z-index: 1;
-    background: var(--text-muted);
-    transition: background var(--transition);
+    display: inline-block;
 }
 
-.router-card .status-dot.online {
+.select-status .status-dot.online {
     background: var(--success);
-    box-shadow: 0 0 8px rgba(0, 214, 143, 0.5);
+    box-shadow: 0 0 6px rgba(0, 214, 143, 0.5);
 }
 
-.router-card .status-dot.offline {
+.select-status .status-dot.offline {
     background: var(--danger);
-    box-shadow: 0 0 8px rgba(255, 71, 87, 0.3);
+    box-shadow: 0 0 6px rgba(255, 71, 87, 0.3);
 }
 
-.router-card .status-dot.checking {
+.select-status .status-dot.checking {
     background: var(--text-muted);
     animation: pulse-dot 1.2s infinite;
+}
+
+.select-status .status-text {
+    color: var(--text-muted);
+}
+
+.select-status .status-text.online {
+    color: var(--success);
+}
+
+.select-status .status-text.offline {
+    color: var(--danger);
 }
 
 @keyframes pulse-dot {
     0%, 100% { opacity: 0.4; }
     50% { opacity: 1; }
-}
-
-.router-card .router-name {
-    font-weight: 600;
-    font-size: 15px;
-    position: relative;
-    z-index: 1;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.router-card .router-status-label {
-    font-size: 12px;
-    color: var(--text-muted);
-    position: relative;
-    z-index: 1;
-    margin-left: auto;
-    flex-shrink: 0;
 }
 
 /* ---- Empty State ---- */
@@ -259,14 +248,6 @@ main {
 }
 
 /* ---- Voucher Form ---- */
-.voucher-form-wrapper {
-    display: none;
-    animation: slideDown 0.3s ease;
-}
-
-.voucher-form-wrapper.visible {
-    display: block;
-}
 
 @keyframes slideDown {
     from { opacity: 0; transform: translateY(-10px); }
@@ -279,37 +260,6 @@ main {
     border-radius: var(--radius);
     padding: 28px 24px;
     box-shadow: var(--shadow);
-}
-
-.voucher-card .selected-router {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 20px;
-    padding-bottom: 16px;
-    border-bottom: 1px solid var(--border-color);
-    font-size: 14px;
-    color: var(--text-secondary);
-}
-
-.voucher-card .selected-router strong {
-    color: var(--text-primary);
-}
-
-.voucher-card .change-btn {
-    margin-left: auto;
-    background: none;
-    border: none;
-    color: var(--accent-secondary);
-    cursor: pointer;
-    font-size: 13px;
-    padding: 4px 8px;
-    border-radius: 4px;
-    transition: background var(--transition);
-}
-
-.voucher-card .change-btn:hover {
-    background: rgba(168, 85, 247, 0.15);
 }
 
 .form-group {

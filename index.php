@@ -47,46 +47,42 @@ $routers = getAllRouters();
 
                 <?php else: ?>
 
-                    <!-- Step 1: Select Router -->
-                    <p class="section-title">Select Your Router</p>
+                    <div class="voucher-card">
+                        <form id="reset-form" autocomplete="off">
 
-                    <div id="router-grid" class="router-grid">
-                        <?php foreach ($routers as $router): ?>
-                            <div class="router-card"
-                                 data-id="<?= htmlspecialchars($router['id']) ?>"
-                                 data-name="<?= htmlspecialchars($router['name']) ?>">
-                                <span class="status-dot checking"></span>
-                                <span class="router-name"><?= htmlspecialchars($router['name']) ?></span>
-                                <span class="router-status-label">Checking...</span>
-                            </div>
-                        <?php endforeach; ?>
-                    </div>
-
-                    <!-- Step 2: Voucher Form (hidden until router selected) -->
-                    <div id="voucher-form-wrapper" class="voucher-form-wrapper">
-                        <div class="voucher-card">
-                            <div class="selected-router">
-                                <span>Router:</span>
-                                <strong id="selected-router-name"></strong>
-                                <button type="button" class="change-btn" id="change-router-btn">Change</button>
-                            </div>
-
-                            <form id="reset-form" autocomplete="off">
-                                <div class="form-group">
-                                    <label for="voucher-input">Enter your voucher code</label>
-                                    <input type="text"
-                                           id="voucher-input"
-                                           name="voucher"
-                                           placeholder="e.g. user123 or V-ABC-1234"
-                                           required
-                                           autocomplete="off"
-                                           spellcheck="false">
+                            <!-- Step 1: Select Router -->
+                            <div class="form-group">
+                                <label for="router-select">Select Router</label>
+                                <div class="select-wrapper">
+                                    <select id="router-select" name="router_id" required>
+                                        <option value="" disabled selected>Choose a router...</option>
+                                        <?php foreach ($routers as $router): ?>
+                                            <option value="<?= htmlspecialchars($router['id']) ?>"
+                                                    data-name="<?= htmlspecialchars($router['name']) ?>">
+                                                <?= htmlspecialchars($router['name']) ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                    <span id="router-status-indicator" class="select-status"></span>
                                 </div>
-                                <button type="submit" id="reset-btn" class="btn btn-primary">
-                                    Reset Voucher
-                                </button>
-                            </form>
-                        </div>
+                            </div>
+
+                            <!-- Step 2: Voucher Code -->
+                            <div class="form-group">
+                                <label for="voucher-input">Voucher Code</label>
+                                <input type="text"
+                                       id="voucher-input"
+                                       name="voucher"
+                                       placeholder="Enter hotspot voucher"
+                                       required
+                                       autocomplete="off"
+                                       spellcheck="false">
+                            </div>
+
+                            <button type="submit" id="reset-btn" class="btn btn-primary">
+                                Reset Now
+                            </button>
+                        </form>
                     </div>
 
                     <!-- Step 3: Result (hidden until reset completes) -->
