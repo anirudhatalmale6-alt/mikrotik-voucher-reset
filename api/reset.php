@@ -102,7 +102,7 @@ try {
         exit;
     }
 
-    // Remove all active sessions for this user
+    // Remove all active sessions for this user (by username)
     $activeSessions = $api->command('/ip/hotspot/active/print', [
         '?user=' . $voucher,
     ]);
@@ -112,6 +112,21 @@ try {
             $api->command('/ip/hotspot/active/remove', [
                 '=.id=' . $session['.id'],
             ]);
+        }
+    }
+
+    // Also remove active sessions by MAC address (some sessions may have empty user field)
+    if (isset($user['mac-address']) && $user['mac-address'] !== '' && $user['mac-address'] !== '00:00:00:00:00:00') {
+        $macSessions = $api->command('/ip/hotspot/active/print', [
+            '?mac-address=' . $user['mac-address'],
+        ]);
+
+        foreach ($macSessions as $session) {
+            if (isset($session['.id'])) {
+                $api->command('/ip/hotspot/active/remove', [
+                    '=.id=' . $session['.id'],
+                ]);
+            }
         }
     }
 
