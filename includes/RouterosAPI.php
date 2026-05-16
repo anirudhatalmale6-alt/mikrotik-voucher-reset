@@ -1,342 +1,175 @@
 <?php
-/**
- * RouterOS API Client
- *
- * Supports both legacy (pre-6.43 challenge-response) and modern (plain text) login.
- * Optimized for fast failure: 3-second timeout, single attempt.
- */
 class RouterosAPI {
+    var $debug = false;
+    var $connected = false;
+    var $port = 8728;
+    var $timeout = 3;
+    var $attempts = 1;
+    var $delay = 0;
+    var $socket;
+    var $error_no;
+    var $error_str;
 
-    private bool $debug = false;
-    private bool $connected = false;
-    private int $port = 8728;
-    private int $timeout = 3;
-    private int $attempts = 1;
-    private $socket = null;
-    private int $errorNo = 0;
-    private string $errorStr = '';
-
-    public function setDebug(bool $debug): void {
-        $this->debug = $debug;
-    }
-
-    public function setTimeout(int $timeout): void {
-        $this->timeout = $timeout;
-    }
-
-    public function setPort(int $port): void {
-        $this->port = $port;
-    }
-
-    public function setAttempts(int $attempts): void {
-        $this->attempts = $attempts;
-    }
-
-    public function isConnected(): bool {
-        return $this->connected;
-    }
-
-    public function getError(): string {
-        return $this->errorStr;
-    }
-
-    /**
-     * Connect and authenticate with the RouterOS device.
-     * Supports both legacy (pre-6.43) and modern login methods.
-     */
-    public function connect(string $host, string $login, string $password): bool {
+    function connect($host, $login, $password) {
         for ($attempt = 1; $attempt <= $this->attempts; $attempt++) {
             $this->connected = false;
-            $this->socket = @fsockopen($host, $this->port, $this->errorNo, $this->errorStr, $this->timeout);
+            $this->socket = @fsockopen($host, $this->port, $this->error_no, $this->error_str, $this->timeout);
+            if ($this->socket) {
+                socket_set_timeout($this->socket, $this->timeout);
 
-            if (!$this->socket) {
-                $this->log("Connection failed to {$host}:{$this->port} - {$this->errorStr}");
-                continue;
-            }
+                // Try modern login first (RouterOS 6.43+)
+                $this->write('/login', false);
+                $this->write('=name=' . $login, false);
+                $this->write('=password=' . $password);
+                $response = $this->readSentence();
 
-            stream_set_timeout($this->socket, $this->timeout);
+                if (isset($response[0]) && $response[0] == "!done") {
+                    $hasChallenge = false;
+                    foreach ($response as $line) {
+                        if (strpos($line, '=ret=') === 0) {
+                            $hasChallenge = true;
+                            break;
+                        }
+                    }
+                    if (!$hasChallenge) {
+                        $this->connected = true;
+                        return true;
+                    }
+                }
 
-            // Try modern login first (RouterOS 6.43+)
-            if ($this->loginModern($login, $password)) {
-                $this->connected = true;
-                return true;
-            }
-
-            // If modern login returns a challenge hash, use legacy method
-            // Close and reconnect for legacy attempt
-            @fclose($this->socket);
-            $this->socket = @fsockopen($host, $this->port, $this->errorNo, $this->errorStr, $this->timeout);
-
-            if (!$this->socket) {
-                continue;
-            }
-
-            stream_set_timeout($this->socket, $this->timeout);
-
-            if ($this->loginLegacy($login, $password)) {
-                $this->connected = true;
-                return true;
-            }
-
-            @fclose($this->socket);
-            $this->socket = null;
-        }
-
-        return false;
-    }
-
-    /**
-     * Modern login (RouterOS 6.43+): plain text credentials
-     */
-    private function loginModern(string $login, string $password): bool {
-        $this->write('/login', false);
-        $this->write('=name=' . $login, false);
-        $this->write('=password=' . $password);
-        $response = $this->readRaw();
-
-        if (isset($response[0]) && $response[0] === '!done') {
-            // Check if this is truly done (no challenge hash returned)
-            foreach ($response as $line) {
-                if (strpos($line, '=ret=') === 0) {
-                    // Legacy system returned a hash - modern login not supported
-                    return false;
+                // Modern login didn't work, try legacy (pre-6.43)
+                @fclose($this->socket);
+                $this->socket = @fsockopen($host, $this->port, $this->error_no, $this->error_str, $this->timeout);
+                if ($this->socket) {
+                    socket_set_timeout($this->socket, $this->timeout);
+                    $this->write('/login');
+                    $response = $this->readSentence();
+                    if (isset($response[0]) && $response[0] == "!done") {
+                        $matches = array();
+                        if (preg_match('/ret=(.*)/', $response[1], $matches)) {
+                            $this->write('/login', false);
+                            $this->write('=name=' . $login, false);
+                            $this->write('=response=00' . md5(chr(0) . $password . pack('H*', $matches[1])));
+                            $response = $this->readSentence();
+                            if (isset($response[0]) && $response[0] == "!done") {
+                                $this->connected = true;
+                                return true;
+                            }
+                        }
+                    }
+                    @fclose($this->socket);
                 }
             }
-            return true;
+            if ($this->delay > 0) {
+                sleep($this->delay);
+            }
         }
-
         return false;
     }
 
-    /**
-     * Legacy login (pre-6.43): challenge-response with MD5
-     */
-    private function loginLegacy(string $login, string $password): bool {
-        $this->write('/login');
-        $response = $this->readRaw();
-
-        if (!isset($response[0]) || $response[0] !== '!done') {
-            return false;
-        }
-
-        // Extract challenge hash
-        $hash = null;
-        foreach ($response as $line) {
-            if (preg_match('/^=ret=(.+)$/', $line, $matches)) {
-                $hash = $matches[1];
-                break;
-            }
-        }
-
-        if ($hash === null) {
-            return false;
-        }
-
-        // Send challenge response
-        $challengeResponse = '00' . md5(chr(0) . $password . pack('H*', $hash));
-
-        $this->write('/login', false);
-        $this->write('=name=' . $login, false);
-        $this->write('=response=' . $challengeResponse);
-        $response = $this->readRaw();
-
-        return isset($response[0]) && $response[0] === '!done';
-    }
-
-    /**
-     * Disconnect from the router
-     */
-    public function disconnect(): void {
+    function disconnect() {
         if ($this->socket) {
             @fclose($this->socket);
-            $this->socket = null;
         }
         $this->connected = false;
     }
 
-    /**
-     * Send a command (or multiple lines). If $endSentence is true, sends
-     * an empty word to mark end of sentence.
-     */
-    public function write(string $command, bool $endSentence = true): bool {
-        if (empty($command)) {
+    function write($command, $param2 = true) {
+        if ($command) {
+            $data = explode("\n", $command);
+            foreach ($data as $com) {
+                $this->writeWord($com);
+            }
+            if ($param2) {
+                $this->writeWord('');
+            }
+            return true;
+        } else {
             return false;
         }
-
-        $lines = explode("\n", $command);
-        foreach ($lines as $line) {
-            $line = trim($line);
-            if ($line !== '') {
-                $this->writeWord($line);
-            }
-        }
-
-        if ($endSentence) {
-            $this->writeWord('');
-        }
-
-        return true;
     }
 
-    /**
-     * Write a single API word (length-prefixed)
-     */
-    private function writeWord(string $word): void {
+    function writeWord($word) {
         $length = strlen($word);
-
-        if ($length < 0x80) {
+        if ($length < 128) {
             fwrite($this->socket, chr($length));
-        } elseif ($length < 0x4000) {
-            $length |= 0x8000;
+        } else if ($length < 16384) {
+            $length += 0x8000;
             fwrite($this->socket, chr(($length >> 8) & 0xFF));
             fwrite($this->socket, chr($length & 0xFF));
-        } elseif ($length < 0x200000) {
-            $length |= 0xC00000;
-            fwrite($this->socket, chr(($length >> 16) & 0xFF));
-            fwrite($this->socket, chr(($length >> 8) & 0xFF));
-            fwrite($this->socket, chr($length & 0xFF));
-        } elseif ($length < 0x10000000) {
-            $length |= 0xE0000000;
-            fwrite($this->socket, chr(($length >> 24) & 0xFF));
-            fwrite($this->socket, chr(($length >> 16) & 0xFF));
-            fwrite($this->socket, chr(($length >> 8) & 0xFF));
-            fwrite($this->socket, chr($length & 0xFF));
-        } else {
-            fwrite($this->socket, chr(0xF0));
-            fwrite($this->socket, chr(($length >> 24) & 0xFF));
+        } else if ($length < 2097152) {
+            $length += 0xC00000;
             fwrite($this->socket, chr(($length >> 16) & 0xFF));
             fwrite($this->socket, chr(($length >> 8) & 0xFF));
             fwrite($this->socket, chr($length & 0xFF));
         }
-
-        if ($length > 0) {
-            fwrite($this->socket, $word);
-        }
-
-        $this->log(">>> {$word}");
+        fwrite($this->socket, $word);
     }
 
     /**
-     * Read raw response words from the socket
+     * Read a single sentence (words until zero-length word)
      */
-    private function readRaw(): array {
-        $response = [];
-
+    function readSentence() {
+        $res = array();
         while (true) {
-            $byte = @fread($this->socket, 1);
-            if ($byte === false || $byte === '') {
-                break;
-            }
-
-            $byte = ord($byte);
+            $byte = ord(fread($this->socket, 1));
             $length = 0;
-
-            if ($byte < 0x80) {
-                $length = $byte;
-            } elseif (($byte & 0xC0) === 0x80) {
-                $length = (($byte & 0x3F) << 8) + ord(fread($this->socket, 1));
-            } elseif (($byte & 0xE0) === 0xC0) {
-                $length = (($byte & 0x1F) << 16)
-                    + (ord(fread($this->socket, 1)) << 8)
-                    + ord(fread($this->socket, 1));
-            } elseif (($byte & 0xF0) === 0xE0) {
-                $length = (($byte & 0x0F) << 24)
-                    + (ord(fread($this->socket, 1)) << 16)
-                    + (ord(fread($this->socket, 1)) << 8)
-                    + ord(fread($this->socket, 1));
-            }
-
-            if ($length > 0) {
-                $word = '';
-                $remaining = $length;
-                while ($remaining > 0) {
-                    $chunk = fread($this->socket, $remaining);
-                    if ($chunk === false || $chunk === '') {
-                        break;
-                    }
-                    $word .= $chunk;
-                    $remaining -= strlen($chunk);
+            if ($byte & 128) {
+                if (($byte & 192) == 128) {
+                    $length = (($byte & 63) << 8) + ord(fread($this->socket, 1));
                 }
-                $response[] = $word;
-                $this->log("<<< {$word}");
             } else {
-                // Empty word = end of sentence
+                $length = $byte;
+            }
+            if ($length > 0) {
+                $_res = "";
+                while (strlen($_res) < $length) {
+                    $_res .= fread($this->socket, $length - strlen($_res));
+                }
+                $res[] = $_res;
+            } else {
                 break;
             }
         }
-
-        return $response;
+        return $res;
     }
 
     /**
-     * Read and parse response into associative arrays.
-     * Returns an array of items, each item being an associative array of key=>value.
+     * Read complete API response: all sentences until !done or !trap
+     * Returns parsed array of records
      */
-    public function read(): array {
-        $raw = $this->readRaw();
-        return $this->parseResponse($raw);
+    function read() {
+        $allWords = array();
+        while (true) {
+            $sentence = $this->readSentence();
+            if (empty($sentence)) {
+                break;
+            }
+            foreach ($sentence as $word) {
+                $allWords[] = $word;
+            }
+            // Stop when we hit !done or !trap or !fatal
+            if (isset($sentence[0]) && ($sentence[0] == '!done' || $sentence[0] == '!trap' || $sentence[0] == '!fatal')) {
+                break;
+            }
+        }
+        return $this->parseResponse($allWords);
     }
 
-    /**
-     * Parse raw API response into structured data
-     */
-    private function parseResponse(array $response): array {
-        $result = [];
-        $current = -1;
-
+    function parseResponse($response) {
+        $result = array();
+        $i = 0;
         foreach ($response as $line) {
-            if ($line === '!re' || $line === '!done') {
-                $current++;
-                $result[$current] = [];
-            } elseif ($line === '!trap' || $line === '!fatal') {
-                $current++;
-                $result[$current] = ['!type' => $line];
-            } elseif (strpos($line, '=') === 0) {
-                // Parse =key=value format
-                $parts = explode('=', substr($line, 1), 2);
-                if (count($parts) === 2 && $current >= 0) {
-                    $result[$current][$parts[0]] = $parts[1];
+            if (strpos($line, "!re") === 0 || strpos($line, "!done") === 0) {
+                $i++;
+            } else if (strpos($line, "=") === 0) {
+                $value = explode("=", $line, 3);
+                if (isset($value[2])) {
+                    $result[$i - 1][$value[1]] = $value[2];
                 }
             }
         }
-
-        // Remove empty !done entries at the end
-        if (!empty($result)) {
-            $last = end($result);
-            if (empty($last)) {
-                array_pop($result);
-            }
-        }
-
         return $result;
     }
-
-    /**
-     * Execute a command and return parsed results in one call
-     */
-    public function command(string $cmd, array $params = []): array {
-        $this->write($cmd, empty($params));
-
-        foreach ($params as $i => $param) {
-            $isLast = ($i === count($params) - 1);
-            $this->write($param, $isLast);
-        }
-
-        return $this->read();
-    }
-
-    /**
-     * Debug logging
-     */
-    private function log(string $message): void {
-        if ($this->debug) {
-            error_log("[RouterosAPI] {$message}");
-        }
-    }
-
-    public function __destruct() {
-        if ($this->connected) {
-            $this->disconnect();
-        }
-    }
 }
+?>

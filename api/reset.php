@@ -3,7 +3,6 @@
  * API: Voucher Reset
  * POST { router_id, voucher }
  * Returns JSON: { success, message, type }
- * Types: success, expired, not_found, error
  */
 
 header('Content-Type: application/json');
@@ -38,86 +37,74 @@ if (!$router) {
     exit;
 }
 
-$api = new RouterosAPI();
-$api->setTimeout(ROUTEROS_TIMEOUT);
-$api->setPort($router['port']);
-$api->setAttempts(ROUTEROS_ATTEMPTS);
+$API = new RouterosAPI();
+$API->timeout = ROUTEROS_TIMEOUT;
+$API->port = $router['port'];
+$API->attempts = ROUTEROS_ATTEMPTS;
 
-if (!$api->connect($router['ip'], $router['username'], $router['password'])) {
+if (!$API->connect($router['ip'], $router['username'], $router['password'])) {
     echo json_encode(['success' => false, 'message' => 'Connection failed. Router may be offline or API is not enabled.', 'type' => 'error']);
     exit;
 }
 
-try {
-    // 1. Find the hotspot user
-    $api->write('/ip/hotspot/user/print', false);
-    $api->write('?name=' . $voucher);
-    $userInfo = $api->read();
+// 1. Find hotspot user
+$API->write('/ip/hotspot/user/print', false);
+$API->write('?name=' . $voucher);
+$userInfo = $API->read();
 
-    if (empty($userInfo)) {
-        $api->disconnect();
-        echo json_encode(['success' => false, 'message' => 'Voucher not found. Please check the code and try again.', 'type' => 'not_found']);
-        exit;
-    }
-
-    $user = $userInfo[0];
-
-    // 2. Check if expired (uptime reached limit-uptime)
-    if (
-        isset($user['limit-uptime']) && isset($user['uptime']) &&
-        $user['limit-uptime'] !== '' && $user['uptime'] !== '' &&
-        $user['uptime'] === $user['limit-uptime']
-    ) {
-        $api->disconnect();
-        echo json_encode(['success' => false, 'message' => 'This voucher has expired. The usage limit has been reached.', 'type' => 'expired']);
-        exit;
-    }
-
-    // 3. Remove active sessions by username
-    $api->write('/ip/hotspot/active/print', false);
-    $api->write('?user=' . $voucher);
-    $activeList = $api->read();
-
-    foreach ($activeList as $session) {
-        if (isset($session['.id'])) {
-            $api->write('/ip/hotspot/active/remove', false);
-            $api->write('=.id=' . $session['.id']);
-            $api->read();
-        }
-    }
-
-    // 4. Also remove active sessions by MAC address
-    if (isset($user['mac-address']) && $user['mac-address'] !== '' && $user['mac-address'] !== '00:00:00:00:00:00') {
-        $api->write('/ip/hotspot/active/print', false);
-        $api->write('?mac-address=' . $user['mac-address']);
-        $macList = $api->read();
-
-        foreach ($macList as $session) {
-            if (isset($session['.id'])) {
-                $api->write('/ip/hotspot/active/remove', false);
-                $api->write('=.id=' . $session['.id']);
-                $api->read();
-            }
-        }
-    }
-
-    // 5. Reset MAC address to 00:00:00:00:00:00
-    if (isset($user['.id'])) {
-        $api->write('/ip/hotspot/user/set', false);
-        $api->write('=.id=' . $user['.id'], false);
-        $api->write('=mac-address=00:00:00:00:00:00');
-        $api->read();
-    }
-
-    $api->disconnect();
-
-    echo json_encode([
-        'success' => true,
-        'message' => 'Reset successful! Voucher "' . htmlspecialchars($voucher) . '" has been reset. You can now reconnect.',
-        'type'    => 'success',
-    ]);
-
-} catch (Exception $e) {
-    $api->disconnect();
-    echo json_encode(['success' => false, 'message' => 'An error occurred: ' . $e->getMessage(), 'type' => 'error']);
+if (empty($userInfo)) {
+    $API->disconnect();
+    echo json_encode(['success' => false, 'message' => 'Voucher not found. Please check the code and try again.', 'type' => 'not_found']);
+    exit;
 }
+
+$user = $userInfo[0];
+
+// 2. Check if expired
+if (isset($user['limit-uptime']) && isset($user['uptime']) && $user['limit-uptime'] !== '' && $user['uptime'] !== '' && $user['uptime'] == $user['limit-uptime']) {
+    $API->disconnect();
+    echo json_encode(['success' => false, 'message' => 'This voucher has expired. The usage limit has been reached.', 'type' => 'expired']);
+    exit;
+}
+
+// 3. Remove active sessions by username
+$API->write('/ip/hotspot/active/print', false);
+$API->write('?user=' . $voucher);
+$activeList = $API->read();
+
+foreach ($activeList as $aUser) {
+    if (isset($aUser['.id'])) {
+        $API->write('/ip/hotspot/active/remove', false);
+        $API->write('=.id=' . $aUser['.id']);
+        $API->read();
+    }
+}
+
+// 4. Also remove active sessions by MAC address
+if (isset($user['mac-address']) && $user['mac-address'] !== '' && $user['mac-address'] !== '00:00:00:00:00:00') {
+    $API->write('/ip/hotspot/active/print', false);
+    $API->write('?mac-address=' . $user['mac-address']);
+    $macList = $API->read();
+
+    foreach ($macList as $aUser) {
+        if (isset($aUser['.id'])) {
+            $API->write('/ip/hotspot/active/remove', false);
+            $API->write('=.id=' . $aUser['.id']);
+            $API->read();
+        }
+    }
+}
+
+// 5. Reset MAC address
+$API->write('/ip/hotspot/user/set', false);
+$API->write('=.id=' . $user['.id'], false);
+$API->write('=mac-address=00:00:00:00:00:00');
+$API->read();
+
+$API->disconnect();
+
+echo json_encode([
+    'success' => true,
+    'message' => 'Reset successful! Voucher "' . htmlspecialchars($voucher) . '" has been reset. You can now reconnect.',
+    'type'    => 'success',
+]);
