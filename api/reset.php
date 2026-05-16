@@ -12,17 +12,11 @@ header('Cache-Control: no-cache');
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/RouterosAPI.php';
 
-// Only accept POST
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    echo json_encode([
-        'success' => false,
-        'message' => 'Method not allowed',
-        'type'    => 'error',
-    ]);
+    echo json_encode(['success' => false, 'message' => 'Method not allowed', 'type' => 'error']);
     exit;
 }
 
-// Parse input (accept both form data and JSON)
 $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
 if (strpos($contentType, 'application/json') !== false) {
     $input = json_decode(file_get_contents('php://input'), true) ?: [];
@@ -33,109 +27,86 @@ if (strpos($contentType, 'application/json') !== false) {
 $routerId = isset($input['router_id']) ? (int) $input['router_id'] : 0;
 $voucher  = isset($input['voucher']) ? trim($input['voucher']) : '';
 
-// Validate
 if ($routerId <= 0 || $voucher === '') {
-    echo json_encode([
-        'success' => false,
-        'message' => 'Please provide both router and voucher code.',
-        'type'    => 'error',
-    ]);
+    echo json_encode(['success' => false, 'message' => 'Please provide both router and voucher code.', 'type' => 'error']);
     exit;
 }
 
-// Look up router
 $router = getRouter($routerId);
 if (!$router) {
-    echo json_encode([
-        'success' => false,
-        'message' => 'Router not found in database.',
-        'type'    => 'error',
-    ]);
+    echo json_encode(['success' => false, 'message' => 'Router not found in database.', 'type' => 'error']);
     exit;
 }
 
-// Connect via RouterOS API
 $api = new RouterosAPI();
 $api->setTimeout(ROUTEROS_TIMEOUT);
 $api->setPort($router['port']);
 $api->setAttempts(ROUTEROS_ATTEMPTS);
 
 if (!$api->connect($router['ip'], $router['username'], $router['password'])) {
-    echo json_encode([
-        'success' => false,
-        'message' => 'Connection failed. Router may be offline or API is not enabled.',
-        'type'    => 'error',
-    ]);
+    echo json_encode(['success' => false, 'message' => 'Connection failed. Router may be offline or API is not enabled.', 'type' => 'error']);
     exit;
 }
 
 try {
-    // Query hotspot user
-    $userInfo = $api->command('/ip/hotspot/user/print', [
-        '?name=' . $voucher,
-    ]);
+    // 1. Find the hotspot user
+    $api->write('/ip/hotspot/user/print', false);
+    $api->write('?name=' . $voucher);
+    $userInfo = $api->read();
 
     if (empty($userInfo)) {
         $api->disconnect();
-        echo json_encode([
-            'success' => false,
-            'message' => 'Voucher not found. Please check the code and try again.',
-            'type'    => 'not_found',
-        ]);
+        echo json_encode(['success' => false, 'message' => 'Voucher not found. Please check the code and try again.', 'type' => 'not_found']);
         exit;
     }
 
     $user = $userInfo[0];
 
-    // Check if expired: uptime has reached limit-uptime
+    // 2. Check if expired (uptime reached limit-uptime)
     if (
         isset($user['limit-uptime']) && isset($user['uptime']) &&
         $user['limit-uptime'] !== '' && $user['uptime'] !== '' &&
         $user['uptime'] === $user['limit-uptime']
     ) {
         $api->disconnect();
-        echo json_encode([
-            'success' => false,
-            'message' => 'This voucher has expired. The usage limit has been reached.',
-            'type'    => 'expired',
-        ]);
+        echo json_encode(['success' => false, 'message' => 'This voucher has expired. The usage limit has been reached.', 'type' => 'expired']);
         exit;
     }
 
-    // Remove all active sessions for this user (by username)
-    $activeSessions = $api->command('/ip/hotspot/active/print', [
-        '?user=' . $voucher,
-    ]);
+    // 3. Remove active sessions by username
+    $api->write('/ip/hotspot/active/print', false);
+    $api->write('?user=' . $voucher);
+    $activeList = $api->read();
 
-    foreach ($activeSessions as $session) {
+    foreach ($activeList as $session) {
         if (isset($session['.id'])) {
-            $api->command('/ip/hotspot/active/remove', [
-                '=.id=' . $session['.id'],
-            ]);
+            $api->write('/ip/hotspot/active/remove', false);
+            $api->write('=.id=' . $session['.id']);
+            $api->read();
         }
     }
 
-    // Also remove active sessions by MAC address (some sessions may have empty user field)
+    // 4. Also remove active sessions by MAC address
     if (isset($user['mac-address']) && $user['mac-address'] !== '' && $user['mac-address'] !== '00:00:00:00:00:00') {
-        $macSessions = $api->command('/ip/hotspot/active/print', [
-            '?mac-address=' . $user['mac-address'],
-        ]);
+        $api->write('/ip/hotspot/active/print', false);
+        $api->write('?mac-address=' . $user['mac-address']);
+        $macList = $api->read();
 
-        foreach ($macSessions as $session) {
+        foreach ($macList as $session) {
             if (isset($session['.id'])) {
-                $api->command('/ip/hotspot/active/remove', [
-                    '=.id=' . $session['.id'],
-                ]);
+                $api->write('/ip/hotspot/active/remove', false);
+                $api->write('=.id=' . $session['.id']);
+                $api->read();
             }
         }
     }
 
-    // Reset MAC address to 00:00:00:00:00:00
+    // 5. Reset MAC address to 00:00:00:00:00:00
     if (isset($user['.id'])) {
-        $api->command('/ip/hotspot/user/set', [
-            '=.id=' . $user['.id'],
-            '=mac-address=00:00:00:00:00:00',
-        ]);
+        $api->write('/ip/hotspot/user/set', false);
+        $api->write('=.id=' . $user['.id'], false);
+        $api->write('=mac-address=00:00:00:00:00:00');
+        $api->read();
     }
 
     $api->disconnect();
@@ -148,9 +119,5 @@ try {
 
 } catch (Exception $e) {
     $api->disconnect();
-    echo json_encode([
-        'success' => false,
-        'message' => 'An error occurred: ' . $e->getMessage(),
-        'type'    => 'error',
-    ]);
+    echo json_encode(['success' => false, 'message' => 'An error occurred: ' . $e->getMessage(), 'type' => 'error']);
 }
