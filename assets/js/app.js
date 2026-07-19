@@ -13,6 +13,7 @@
     var resetForm = document.getElementById('reset-form');
     var resultWrapper = document.getElementById('result-wrapper');
     var tryAgainBtn = document.getElementById('try-again-btn');
+    var voucherCard = document.querySelector('.voucher-card');
 
     function init() {
         if (!routerSelect) return;
@@ -38,6 +39,7 @@
         if (tryAgainBtn) {
             tryAgainBtn.addEventListener('click', function () {
                 hideResult();
+                if (voucherCard) voucherCard.style.display = '';
                 resetForm.style.display = '';
                 voucherInput.value = '';
                 voucherInput.focus();
@@ -109,6 +111,7 @@
     }
 
     function showResult(data) {
+        if (voucherCard) voucherCard.style.display = 'none';
         resetForm.style.display = 'none';
 
         var resultCard = document.getElementById('result-card');

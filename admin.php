@@ -94,6 +94,8 @@ $routers = $isLoggedIn ? getAllRouters() : [];
     <link rel="stylesheet" href="assets/css/style.css">
 </head>
 <body>
+    <canvas id="net-bg"></canvas>
+    <div class="bg-veil"></div>
     <div class="app-wrapper">
 
         <!-- Header -->
@@ -311,5 +313,6 @@ $routers = $isLoggedIn ? getAllRouters() : [];
         </footer>
 
     </div>
+    <script src="assets/js/network-bg.js"></script>
 </body>
 </html>

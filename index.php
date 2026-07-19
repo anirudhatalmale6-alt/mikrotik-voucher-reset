@@ -18,6 +18,8 @@ $routers = getAllRouters();
     <link rel="stylesheet" href="assets/css/style.css">
 </head>
 <body>
+    <canvas id="net-bg"></canvas>
+    <div class="bg-veil"></div>
     <div class="app-wrapper">
 
         <!-- Header -->
@@ -111,6 +113,7 @@ $routers = getAllRouters();
 
     </div>
 
+    <script src="assets/js/network-bg.js"></script>
     <script src="assets/js/app.js"></script>
 </body>
 </html>
