@@ -32,6 +32,14 @@ function getDB(): PDO {
         initDatabase($pdo);
     }
 
+    // Always ensure the settings table exists (migrates older databases).
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS settings (
+            key   TEXT PRIMARY KEY,
+            value TEXT
+        )
+    ");
+
     return $pdo;
 }
 
@@ -47,6 +55,49 @@ function initDatabase(PDO $pdo): void {
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         )
     ");
+}
+
+/**
+ * Read a stored setting value (or null if unset).
+ */
+function getSetting(string $key): ?string {
+    $db = getDB();
+    $stmt = $db->prepare('SELECT value FROM settings WHERE key = ?');
+    $stmt->execute([$key]);
+    $row = $stmt->fetch();
+    return $row ? $row['value'] : null;
+}
+
+/**
+ * Store (insert or update) a setting value.
+ */
+function setSetting(string $key, string $value): void {
+    $db = getDB();
+    $stmt = $db->prepare('
+        INSERT INTO settings (key, value) VALUES (?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+    ');
+    $stmt->execute([$key, $value]);
+}
+
+/**
+ * Verify a candidate admin password.
+ * Uses the hash stored in the database once the admin has set their own;
+ * before that it falls back to the ADMIN_PASSWORD constant in config.php.
+ */
+function verifyAdminPassword(string $password): bool {
+    $hash = getSetting('admin_password_hash');
+    if ($hash !== null && $hash !== '') {
+        return password_verify($password, $hash);
+    }
+    return hash_equals(ADMIN_PASSWORD, $password);
+}
+
+/**
+ * Set a new admin password (stored as a bcrypt hash).
+ */
+function setAdminPassword(string $newPassword): void {
+    setSetting('admin_password_hash', password_hash($newPassword, PASSWORD_BCRYPT));
 }
 
 /**

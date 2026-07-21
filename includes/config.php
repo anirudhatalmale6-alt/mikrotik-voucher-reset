@@ -7,7 +7,10 @@
 define('APP_NAME', 'VoucherReset');
 define('APP_VERSION', '1.0.0');
 
-// Admin credentials
+// Initial/default admin password.
+// Used only for the FIRST login. Once you change the password from the
+// admin panel (Change Password button), the new password is stored securely
+// (bcrypt-hashed) in the database and this value is no longer used.
 define('ADMIN_PASSWORD', 'admin123');
 
 // Database

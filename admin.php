@@ -17,7 +17,7 @@ $actionError = '';
 // Handle login
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'login') {
     $password = $_POST['password'] ?? '';
-    if ($password === ADMIN_PASSWORD) {
+    if (verifyAdminPassword($password)) {
         $_SESSION['admin_logged_in'] = true;
         $isLoggedIn = true;
     } else {
@@ -75,6 +75,25 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $router = getRouter($id);
             deleteRouter($id);
             $actionMessage = 'Router deleted successfully.';
+        }
+    }
+
+    if ($action === 'change_password') {
+        $current = $_POST['current_password'] ?? '';
+        $new     = $_POST['new_password'] ?? '';
+        $confirm = $_POST['confirm_password'] ?? '';
+
+        if ($current === '' || $new === '' || $confirm === '') {
+            $actionError = 'All password fields are required.';
+        } elseif (!verifyAdminPassword($current)) {
+            $actionError = 'Current password is incorrect.';
+        } elseif (strlen($new) < 6) {
+            $actionError = 'New password must be at least 6 characters.';
+        } elseif ($new !== $confirm) {
+            $actionError = 'New password and confirmation do not match.';
+        } else {
+            setAdminPassword($new);
+            $actionMessage = 'Admin password changed successfully.';
         }
     }
 }
@@ -155,6 +174,7 @@ $routers = $isLoggedIn ? getAllRouters() : [];
                     <h2>Router Management</h2>
                     <div style="display: flex; gap: 8px; flex-wrap: wrap;">
                         <button class="btn btn-add btn-sm" onclick="openModal('add')">+ Add Router</button>
+                        <button class="btn btn-secondary btn-sm" onclick="openPasswordModal()">Change Password</button>
                         <a href="admin.php?logout=1" class="btn btn-logout btn-sm">Logout</a>
                     </div>
                 </div>
@@ -253,7 +273,50 @@ $routers = $isLoggedIn ? getAllRouters() : [];
                 </div>
             </div>
 
+            <!-- Modal for Change Password -->
+            <div id="password-modal-overlay" class="modal-overlay" onclick="if(event.target===this)closePasswordModal()">
+                <div class="modal">
+                    <h3>Change Admin Password</h3>
+                    <form method="POST" autocomplete="off">
+                        <input type="hidden" name="action" value="change_password">
+
+                        <div class="form-group">
+                            <label for="current-password">Current Password</label>
+                            <input type="password" id="current-password" name="current_password" placeholder="Enter current password" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="new-password">New Password</label>
+                            <input type="password" id="new-password" name="new_password" placeholder="At least 6 characters" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="confirm-password">Confirm New Password</label>
+                            <input type="password" id="confirm-password" name="confirm_password" placeholder="Re-enter new password" required>
+                        </div>
+
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-secondary" onclick="closePasswordModal()">Cancel</button>
+                            <button type="submit" class="btn btn-primary">Update Password</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
             <script>
+                function openPasswordModal() {
+                    var overlay = document.getElementById('password-modal-overlay');
+                    document.getElementById('current-password').value = '';
+                    document.getElementById('new-password').value = '';
+                    document.getElementById('confirm-password').value = '';
+                    overlay.classList.add('visible');
+                    document.getElementById('current-password').focus();
+                }
+
+                function closePasswordModal() {
+                    document.getElementById('password-modal-overlay').classList.remove('visible');
+                }
+
                 function openModal(mode, data) {
                     var overlay = document.getElementById('modal-overlay');
                     var title = document.getElementById('modal-title');
@@ -296,9 +359,9 @@ $routers = $isLoggedIn ? getAllRouters() : [];
                     document.getElementById('modal-overlay').classList.remove('visible');
                 }
 
-                // Close modal on Escape
+                // Close modals on Escape
                 document.addEventListener('keydown', function (e) {
-                    if (e.key === 'Escape') closeModal();
+                    if (e.key === 'Escape') { closeModal(); closePasswordModal(); }
                 });
             </script>
 
