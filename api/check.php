@@ -11,8 +11,11 @@
  * store those dates in different places, so we look in all of them:
  *   1. User Manager (RouterOS 7 and the old RouterOS 6 one) - exact dates
  *   2. the hotspot user's comment - where voucher generators write the date
- *   3. the hotspot user's uptime / limit-uptime counters
- *   4. the live session, if the voucher is online right now
+ *   3. the expiry date minus the validity of the package (that is exactly how
+ *      the generator worked the expiry out on the first login)
+ *   4. the login cookie the router keeps for the device
+ *   5. the router log
+ *   6. the live session, if the voucher is online right now
  */
 
 header('Content-Type: application/json');
@@ -157,9 +160,21 @@ function rosDateTime(string $date, string $time = '00:00:00'): ?DateTimeImmutabl
     }
 }
 
+/** Parse a "date time" string coming back from the router in one field. */
+function rosStamp(?string $value): ?DateTimeImmutable {
+    if ($value === null) return null;
+    $parts = preg_split('/\s+/', trim($value));
+    if (!$parts || $parts[0] === '') return null;
+    return rosDateTime($parts[0], $parts[1] ?? '');
+}
+
 function fmtDate(?DateTimeImmutable $dt, bool $withTime = true): string {
     if (!$dt) return '';
     return $dt->format($withTime ? 'd M Y, H:i' : 'd M Y');
+}
+
+function dtSub(DateTimeImmutable $dt, int $seconds): DateTimeImmutable {
+    return $dt->sub(new DateInterval('PT' . max(0, $seconds) . 'S'));
 }
 
 /**
@@ -187,6 +202,63 @@ function scanDates(string $text): array {
         return $a['dt'] <=> $b['dt'];
     });
     return $found;
+}
+
+/**
+ * How long a voucher is valid for, written into the package name ("30d-5M",
+ * "7 Days", "1Month") or into the comment the generator leaves ("vc-30d").
+ *
+ * Only day/week/hour/month words are accepted on purpose: a bare "m" or "M"
+ * in a package name is the speed limit ("30d-5M"), never a month.
+ */
+function scanValidity(string $text): ?array {
+    $t = strtolower($text);
+    /* dates first - a date must never be read as a duration */
+    $t = preg_replace('#\d{4}-\d{1,2}-\d{1,2}|[a-z]{3}/\d{1,2}/\d{4}|\d{1,2}-[a-z]{3}-\d{4}#', ' ', $t);
+    $t = preg_replace('/\d{1,2}:\d{2}(:\d{2})?/', ' ', $t);
+
+    $tests = [
+        ['/(\d+)\s*(?:months?|mo)\b/', 2592000, 'month'],
+        ['/(\d+)\s*(?:weeks?|w)\b/',    604800,  'week'],
+        ['/(\d+)\s*(?:days?|d)\b/',     86400,   'day'],
+        ['/(\d+)\s*(?:hours?|hrs?|h)\b/', 3600,  'hour'],
+    ];
+    foreach ($tests as $t3) {
+        list($re, $mul, $unit) = $t3;
+        if (preg_match($re, $t, $m)) {
+            $n = (int) $m[1];
+            if ($n <= 0 || $n > 999) continue;
+            return ['sec' => $n * $mul, 'raw' => $n . ' ' . $unit . ($n > 1 ? 's' : '')];
+        }
+    }
+    return null;
+}
+
+/**
+ * The router log prints its timestamps as "14:56:03" (today), "sep/05 14:56:03"
+ * (this year) or with the full date. Resolve them against the router's clock.
+ */
+function logStamp(string $value, ?DateTimeImmutable $now): ?DateTimeImmutable {
+    $value = trim($value);
+    if ($value === '') return null;
+
+    if (preg_match('/^(\d{1,2}:\d{2}(?::\d{2})?)$/', $value, $m)) {
+        if (!$now) return null;
+        $dt = rosDateTime($now->format('Y-m-d'), $m[1]);
+        if ($dt && $dt > $now) {
+            $dt = $dt->sub(new DateInterval('P1D'));
+        }
+        return $dt;
+    }
+    if (preg_match('#^([a-z]{3}/\d{1,2})\s+(\d{1,2}:\d{2}(?::\d{2})?)$#i', $value, $m)) {
+        if (!$now) return null;
+        $dt = rosDateTime($m[1] . '/' . $now->format('Y'), $m[2]);
+        if ($dt && $dt > $now) {
+            $dt = rosDateTime($m[1] . '/' . ((int) $now->format('Y') - 1), $m[2]);
+        }
+        return $dt;
+    }
+    return rosStamp($value);
 }
 
 function fail(string $message, string $type = 'error'): void {
@@ -265,11 +337,11 @@ if (!empty($umRows[0])) {
     }
     $sesRows = rosRows(rosQuery($API, '/user-manager/session/print', ['?user=' . $voucher]));
     foreach ($sesRows as $s) {
-        $started = isset($s['started']) ? rosDateTime(...array_pad(explode(' ', trim($s['started'])), 2, '')) : null;
+        $started = rosStamp($s['started'] ?? null);
         if ($started && (!$umFirst || $started < $umFirst)) {
             $umFirst = $started;
         }
-        $ended = isset($s['ended']) ? rosDateTime(...array_pad(explode(' ', trim($s['ended'])), 2, '')) : null;
+        $ended = rosStamp($s['ended'] ?? null);
         if ($ended && (!$umLast || $ended > $umLast)) {
             $umLast = $ended;
         }
@@ -278,6 +350,18 @@ if (!empty($umRows[0])) {
     $umRows = rosRows(rosQuery($API, '/tool/user-manager/user/print', ['?username=' . $voucher]));
     if (!empty($umRows[0])) {
         $umUser = $umRows[0];
+        /* the old User Manager keeps its history in the same place */
+        $sesRows = rosRows(rosQuery($API, '/tool/user-manager/session/print', ['?user=' . $voucher]));
+        foreach ($sesRows as $s) {
+            $started = rosStamp($s['from-time'] ?? null);
+            if ($started && (!$umFirst || $started < $umFirst)) {
+                $umFirst = $started;
+            }
+            $ended = rosStamp($s['till-time'] ?? null);
+            if ($ended && (!$umLast || $ended > $umLast)) {
+                $umLast = $ended;
+            }
+        }
     }
 }
 
@@ -298,7 +382,7 @@ if ($user || $umUser) {
 }
 $active = $activeRows[0] ?? null;
 
-/* 4. The user's profile (for its session timeout) */
+/* 4. The user's package (its session timeout, and any validity written in it) */
 $hsProfile = null;
 if ($user && !empty($user['profile'])) {
     $pRows = rosRows(rosQuery($API, '/ip/hotspot/user/profile/print', ['?name=' . $user['profile']]));
@@ -307,13 +391,11 @@ if ($user && !empty($user['profile'])) {
     }
 }
 
-$API->disconnect();
-
 /* ------------------------------------------------------------------ */
-/* Work out the two dates                                              */
+/* Everything the router already told us                               */
 /* ------------------------------------------------------------------ */
 
-$comment     = trim((string) ($user['comment'] ?? ($umUser['comment'] ?? '')));
+$comment      = trim((string) ($user['comment'] ?? ($umUser['comment'] ?? '')));
 $commentDates = $comment !== '' ? scanDates($comment) : [];
 
 $usedSec  = rosSeconds($user['uptime'] ?? null);
@@ -327,53 +409,22 @@ if ($limitBytes === null && isset($user['limit-bytes-in'])) {
 $usedBytes  = ($bytesIn ?? 0) + ($bytesOut ?? 0);
 $disabled   = isset($user['disabled']) && $user['disabled'] === 'true';
 $mac        = $user['mac-address'] ?? '';
+$sessionSec = $active ? rosSeconds($active['uptime'] ?? null) : null;
+$sessionStart = ($active && $now && $sessionSec !== null) ? dtSub($now, $sessionSec) : null;
 $everUsed   = ($usedSec !== null && $usedSec > 0)
               || ($mac !== '' && $mac !== '00:00:00:00:00:00')
               || $umFirst !== null
               || $active !== null;
 
-/* --- activation date --- */
-$activatedText = '';
-$activatedNote = '';
-
-if ($umFirst) {
-    $activatedText = fmtDate($umFirst);
-    $activatedNote = 'First login, from the router\'s User Manager history.';
-} elseif (count($commentDates) >= 2) {
-    $activatedText = fmtDate($commentDates[0]['dt'], $commentDates[0]['hasTime']);
-    $activatedNote = 'Written on the voucher when it was first used.';
-} elseif (count($commentDates) === 1 && $now && $commentDates[0]['dt'] <= $now) {
-    $activatedText = fmtDate($commentDates[0]['dt'], $commentDates[0]['hasTime']);
-    $activatedNote = 'Written on the voucher when it was first used.';
-} elseif ($active && $now) {
-    $sessionSec = rosSeconds($active['uptime'] ?? null);
-    if ($sessionSec !== null) {
-        $activatedText = fmtDate($now->sub(new DateInterval('PT' . $sessionSec . 'S')));
-        $activatedNote = 'Start of the session running right now (not necessarily the first one).';
-    } else {
-        $activatedText = 'In use right now';
-    }
-} elseif ($everUsed) {
-    $activatedText = 'Already used';
-    $activatedNote = 'The router keeps the used time for this voucher but not the date of the first login.';
-} else {
-    $activatedText = 'Not used yet';
-    $activatedNote = 'Nobody has logged in with this voucher. The clock starts on the first login.';
-}
-
-/* --- expiry date --- */
-$expiresText = '';
-$expiresNote = '';
-$expired     = false;
-
+/* --- the expiry date, worked out first: the activation can be derived from it --- */
 $umEnd = null;
 foreach (['end-time', 'till-time', 'end-date'] as $k) {
     if ($umProfile && !empty($umProfile[$k])) {
-        $umEnd = rosDateTime(...array_pad(explode(' ', trim($umProfile[$k])), 2, ''));
+        $umEnd = rosStamp($umProfile[$k]);
         if ($umEnd) break;
     }
     if ($umUser && !empty($umUser[$k])) {
-        $umEnd = rosDateTime(...array_pad(explode(' ', trim($umUser[$k])), 2, ''));
+        $umEnd = rosStamp($umUser[$k]);
         if ($umEnd) break;
     }
 }
@@ -387,6 +438,160 @@ foreach ($commentDates as $cd) {
 if ($futureComment === null && count($commentDates) >= 2) {
     $futureComment = $commentDates[count($commentDates) - 1];
 }
+
+$calendarExpiry = $umEnd ?: ($futureComment ? $futureComment['dt'] : null);
+
+/* --- how long this voucher is valid for --- */
+$validity = null;
+if ($comment !== '') {
+    $validity = scanValidity($comment);
+}
+if (!$validity && $user && !empty($user['profile'])) {
+    $validity = scanValidity($user['profile']);
+}
+if (!$validity && $umProfile && !empty($umProfile['profile'])) {
+    $validity = scanValidity($umProfile['profile']);
+}
+if (!$validity && $hsProfile) {
+    /* voucher generators keep the validity as a quoted "30d" inside the
+       on-login script that writes the expiry onto the voucher */
+    foreach (['on-login', 'on-logout'] as $k) {
+        if (empty($hsProfile[$k])) continue;
+        if (preg_match('/"(\d+[dwh])"/i', $hsProfile[$k], $m)) {
+            $validity = scanValidity($m[1]);
+            if ($validity) break;
+        }
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* The activation date, best source first                              */
+/* ------------------------------------------------------------------ */
+
+$activatedLabel = 'Activated on';
+$activatedText  = '';
+$activatedNote  = '';
+$activatedFrom  = null;   // DateTimeImmutable once we have a real answer
+
+if ($umFirst) {
+    $activatedFrom = $umFirst;
+    $activatedNote = 'First login, from the router\'s User Manager history.';
+} elseif (count($commentDates) >= 2) {
+    $activatedFrom = $commentDates[0]['dt'];
+    $activatedNote = 'Written on the voucher when it was first used.';
+} elseif (count($commentDates) === 1 && $now && $commentDates[0]['dt'] <= $now) {
+    $activatedFrom = $commentDates[0]['dt'];
+    $activatedNote = 'Written on the voucher when it was first used.';
+} elseif ($calendarExpiry && $validity && $now && $everUsed) {
+    /* The generator stamps the expiry onto the voucher on the first login,
+       as "first login + validity" - so the first login is the expiry minus
+       that same validity. */
+    $cand  = dtSub($calendarExpiry, $validity['sec']);
+    $floor = dtSub($now, 800 * 86400);
+    if ($cand <= $now && $cand > $floor) {
+        $activatedFrom = $cand;
+        $activatedNote = 'First login: the expiry date (' . fmtDate($calendarExpiry)
+                       . ') less the ' . $validity['raw'] . ' this package is valid for.';
+    }
+}
+
+/* Still nothing? Ask the router for the traces a login leaves behind. */
+$cookieLogin = null;
+$logLogin    = null;
+
+if (!$activatedFrom && $everUsed && $now) {
+    /* (a) the login cookie: it is created at login and counts down from the
+           hotspot server profile's cookie-lifetime */
+    $cookies = rosRows(rosQuery($API, '/ip/hotspot/cookie/print', ['?user=' . $voucher]));
+    if ($cookies) {
+        $cookieLife    = null;
+        $srvProfile    = null;
+        if ($active && !empty($active['server'])) {
+            $srv = rosRows(rosQuery($API, '/ip/hotspot/print', ['?name=' . $active['server']]));
+            if (!empty($srv[0]['profile'])) {
+                $srvProfile = $srv[0]['profile'];
+            }
+        }
+        $lifetimes = [];
+        foreach (rosRows(rosQuery($API, '/ip/hotspot/profile/print')) as $p) {
+            $s = rosSeconds($p['cookie-lifetime'] ?? null);
+            if ($s === null) continue;
+            if ($srvProfile !== null && ($p['name'] ?? '') === $srvProfile) {
+                $cookieLife = $s;
+                break;
+            }
+            $lifetimes[$s] = true;
+        }
+        if ($cookieLife === null && count($lifetimes) === 1) {
+            $cookieLife = (int) array_keys($lifetimes)[0];
+        }
+        if ($cookieLife !== null) {
+            foreach ($cookies as $c) {
+                $rem = rosSeconds($c['expires-in'] ?? null);
+                if ($rem === null || $rem > $cookieLife) continue;
+                $age = $cookieLife - $rem;
+                if ($age < 120) continue;           // created seconds ago - tells us nothing
+                $cand = dtSub($now, $age);
+                if (!$cookieLogin || $cand < $cookieLogin) {
+                    $cookieLogin = $cand;
+                }
+            }
+        }
+    }
+
+    /* (b) the router log, if the login is still in it */
+    if (!$cookieLogin) {
+        $needle = strtolower($voucher);
+        foreach (rosRows(rosQuery($API, '/log/print')) as $row) {
+            $msg = strtolower($row['message'] ?? '');
+            if ($msg === '' || strpos($msg, $needle) === false) continue;
+            if (strpos($msg, 'logged in') === false) continue;
+            $stamp = logStamp($row['time'] ?? '', $now);
+            if ($stamp && (!$logLogin || $stamp < $logLogin)) {
+                $logLogin = $stamp;
+            }
+        }
+    }
+}
+
+$API->disconnect();
+
+if (!$activatedFrom && $cookieLogin) {
+    $activatedFrom = $cookieLogin;
+    $activatedNote = 'First login on this device, from the login cookie the router still holds.';
+} elseif (!$activatedFrom && $logLogin) {
+    $activatedFrom = $logLogin;
+    $activatedNote = 'Earliest login for this voucher still in the router log.';
+}
+
+if ($activatedFrom) {
+    $activatedText = fmtDate($activatedFrom);
+} elseif ($sessionStart) {
+    /* Last resort. This is NOT the activation date, so it is not labelled as one. */
+    $activatedLabel = 'Online since';
+    $activatedText  = fmtDate($sessionStart);
+    $activatedNote  = 'This is when the session running right now started. This voucher has no'
+                    . ' expiry date and no User Manager record on the router, so the first login'
+                    . ' was never saved anywhere.';
+} elseif ($active) {
+    $activatedLabel = 'Online since';
+    $activatedText  = 'In use right now';
+} elseif ($everUsed) {
+    $activatedText = 'Already used';
+    $activatedNote = 'The router keeps the used time for this voucher but not the date of the first login.';
+} else {
+    $activatedText = 'Not used yet';
+    $activatedNote = 'Nobody has logged in with this voucher. The clock starts on the first login.';
+}
+
+/* ------------------------------------------------------------------ */
+/* The expiry date                                                     */
+/* ------------------------------------------------------------------ */
+
+$expiresLabel = 'Expires on';
+$expiresText  = '';
+$expiresNote  = '';
+$expired      = false;
 
 if ($umEnd) {
     $expiresText = fmtDate($umEnd);
@@ -406,6 +611,7 @@ if ($umEnd) {
         $expiresText = 'Starts on first login';
         $expiresNote = 'Good for ' . fmtDuration($limitSec) . ' of use once someone logs in.';
     } else {
+        $expiresLabel = 'Time left';
         $expiresText = fmtDuration($left) . ' of use left';
         $expiresNote = 'This voucher is limited by time online (' . fmtDuration($limitSec)
                      . ' in total), not by a calendar date - the clock only runs while somebody is connected.';
@@ -413,13 +619,20 @@ if ($umEnd) {
 } elseif ($limitBytes !== null && $limitBytes > 0) {
     $leftBytes = $limitBytes - $usedBytes;
     if ($leftBytes <= 0) {
+        $expiresLabel = 'Data left';
         $expiresText = 'Data finished';
         $expiresNote = 'All ' . fmtBytes($limitBytes) . ' have been used.';
         $expired = true;
     } else {
+        $expiresLabel = 'Data left';
         $expiresText = fmtBytes($leftBytes) . ' of data left';
         $expiresNote = 'This voucher is limited by data (' . fmtBytes($limitBytes) . ' in total), not by a date.';
     }
+} elseif ($activatedFrom && $validity) {
+    $end = $activatedFrom->add(new DateInterval('PT' . $validity['sec'] . 'S'));
+    $expiresText = fmtDate($end);
+    $expiresNote = 'First login plus the ' . $validity['raw'] . ' this package is valid for.';
+    $expired = ($now && $end < $now);
 } else {
     $expiresText = 'No expiry set';
     $expiresNote = 'This voucher has no time limit, no data limit and no expiry date on the router.';
@@ -460,6 +673,9 @@ if ($user && !empty($user['profile'])) {
 } elseif ($umProfile && !empty($umProfile['profile'])) {
     $add('Package', $umProfile['profile']);
 }
+if ($validity) {
+    $add('Valid for', $validity['raw']);
+}
 if ($limitSec !== null) {
     $add('Time limit', fmtDuration($limitSec));
 }
@@ -484,8 +700,15 @@ if ($hsProfile && !empty($hsProfile['session-timeout'])) {
 if ($mac !== '' && $mac !== '00:00:00:00:00:00') {
     $add('Locked to device', $mac);
 }
+if ($umLast) {
+    $add('Last seen', fmtDate($umLast));
+} elseif ($umUser && !empty($umUser['last-seen'])) {
+    $add('Last seen', $umUser['last-seen']);
+}
 if ($active) {
-    $sessionSec = rosSeconds($active['uptime'] ?? null);
+    if ($sessionStart && $activatedLabel !== 'Online since') {
+        $add('This session started', fmtDate($sessionStart));
+    }
     $add('Online for', $sessionSec !== null ? fmtDuration($sessionSec) : ($active['uptime'] ?? ''));
     $add('IP address', $active['address'] ?? '');
     $left = rosSeconds($active['session-time-left'] ?? null);
@@ -504,8 +727,8 @@ echo json_encode([
     'voucher'     => $voucher,
     'router'      => $router['name'],
     'statusLabel' => $statusLabel,
-    'activated'   => ['text' => $activatedText, 'note' => $activatedNote],
-    'expires'     => ['text' => $expiresText,   'note' => $expiresNote],
+    'activated'   => ['label' => $activatedLabel, 'text' => $activatedText, 'note' => $activatedNote],
+    'expires'     => ['label' => $expiresLabel,   'text' => $expiresText,   'note' => $expiresNote],
     'details'     => $details,
     'comment'     => $comment,
 ]);

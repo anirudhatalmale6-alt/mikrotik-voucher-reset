@@ -156,12 +156,12 @@
                  + '</div>'
                  + '<div class="check-dates">'
                  + '<div class="check-date">'
-                 + '<div class="check-date-label">Activated on</div>'
+                 + '<div class="check-date-label">' + esc(data.activated.label || 'Activated on') + '</div>'
                  + '<div class="check-date-value">' + esc(data.activated.text) + '</div>'
                  + (data.activated.note ? '<div class="check-date-note">' + esc(data.activated.note) + '</div>' : '')
                  + '</div>'
                  + '<div class="check-date">'
-                 + '<div class="check-date-label">Expires on</div>'
+                 + '<div class="check-date-label">' + esc(data.expires.label || 'Expires on') + '</div>'
                  + '<div class="check-date-value">' + esc(data.expires.text) + '</div>'
                  + (data.expires.note ? '<div class="check-date-note">' + esc(data.expires.note) + '</div>' : '')
                  + '</div>'
