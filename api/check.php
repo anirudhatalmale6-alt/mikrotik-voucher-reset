@@ -564,24 +564,15 @@ if (!$activatedFrom && $cookieLogin) {
     $activatedNote = 'Earliest login for this voucher still in the router log.';
 }
 
+/**
+ * If the router genuinely does not hold the first login, the box is left out
+ * altogether. Showing the current session there - or any other stand-in - reads
+ * as the activation date whatever the small print says, so there is no box
+ * unless the date in it is the real one. The facts we do have go into the
+ * detail rows below instead.
+ */
 if ($activatedFrom) {
     $activatedText = fmtDate($activatedFrom);
-} elseif ($sessionStart) {
-    /* Last resort. This is NOT the activation date, so it is not labelled as one. */
-    $activatedLabel = 'Online since';
-    $activatedText  = fmtDate($sessionStart);
-    $activatedNote  = 'This is when the session running right now started. This voucher has no'
-                    . ' expiry date and no User Manager record on the router, so the first login'
-                    . ' was never saved anywhere.';
-} elseif ($active) {
-    $activatedLabel = 'Online since';
-    $activatedText  = 'In use right now';
-} elseif ($everUsed) {
-    $activatedText = 'Already used';
-    $activatedNote = 'The router keeps the used time for this voucher but not the date of the first login.';
-} else {
-    $activatedText = 'Not used yet';
-    $activatedNote = 'Nobody has logged in with this voucher. The clock starts on the first login.';
 }
 
 /* ------------------------------------------------------------------ */
@@ -706,8 +697,8 @@ if ($umLast) {
     $add('Last seen', $umUser['last-seen']);
 }
 if ($active) {
-    if ($sessionStart && $activatedLabel !== 'Online since') {
-        $add('This session started', fmtDate($sessionStart));
+    if ($sessionStart) {
+        $add($activatedFrom ? 'This session started' : 'Online since', fmtDate($sessionStart));
     }
     $add('Online for', $sessionSec !== null ? fmtDuration($sessionSec) : ($active['uptime'] ?? ''));
     $add('IP address', $active['address'] ?? '');
@@ -727,6 +718,8 @@ echo json_encode([
     'voucher'     => $voucher,
     'router'      => $router['name'],
     'statusLabel' => $statusLabel,
+    /* text empty = the router does not hold the first login; the front end then
+       leaves the whole box out rather than putting a stand-in under that label */
     'activated'   => ['label' => $activatedLabel, 'text' => $activatedText, 'note' => $activatedNote],
     'expires'     => ['label' => $expiresLabel,   'text' => $expiresText,   'note' => $expiresNote],
     'details'     => $details,

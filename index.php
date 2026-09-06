@@ -89,7 +89,7 @@ $routers = getAllRouters();
                                     Reset Now
                                 </button>
                             </div>
-                            <p class="btn-hint">Check first to see the activation and expiry date - it changes nothing on the router.</p>
+                            <p class="btn-hint">Check first to see the expiry date and what is left - it changes nothing on the router.</p>
                         </form>
                     </div>
 

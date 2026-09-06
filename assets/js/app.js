@@ -155,11 +155,15 @@
                  + '<span class="check-badge">' + esc(data.statusLabel) + '</span>'
                  + '</div>'
                  + '<div class="check-dates">'
-                 + '<div class="check-date">'
-                 + '<div class="check-date-label">' + esc(data.activated.label || 'Activated on') + '</div>'
-                 + '<div class="check-date-value">' + esc(data.activated.text) + '</div>'
-                 + (data.activated.note ? '<div class="check-date-note">' + esc(data.activated.note) + '</div>' : '')
-                 + '</div>'
+                 // no activation box at all unless the router really holds the
+                 // first login - a stand-in there reads as the activation date
+                 + (data.activated && data.activated.text
+                        ? '<div class="check-date">'
+                        + '<div class="check-date-label">' + esc(data.activated.label || 'Activated on') + '</div>'
+                        + '<div class="check-date-value">' + esc(data.activated.text) + '</div>'
+                        + (data.activated.note ? '<div class="check-date-note">' + esc(data.activated.note) + '</div>' : '')
+                        + '</div>'
+                        : '')
                  + '<div class="check-date">'
                  + '<div class="check-date-label">' + esc(data.expires.label || 'Expires on') + '</div>'
                  + '<div class="check-date-value">' + esc(data.expires.text) + '</div>'
