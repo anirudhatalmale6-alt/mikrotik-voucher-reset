@@ -5,15 +5,19 @@
     'use strict';
 
     var isSubmitting = false;
+    var isChecking = false;
 
     var routerSelect = document.getElementById('router-select');
     var statusIndicator = document.getElementById('router-status-indicator');
     var voucherInput = document.getElementById('voucher-input');
     var resetBtn = document.getElementById('reset-btn');
+    var checkBtn = document.getElementById('check-btn');
     var resetForm = document.getElementById('reset-form');
     var resultWrapper = document.getElementById('result-wrapper');
     var tryAgainBtn = document.getElementById('try-again-btn');
     var voucherCard = document.querySelector('.voucher-card');
+    var checkWrapper = document.getElementById('check-wrapper');
+    var checkCard = document.getElementById('check-card');
 
     function init() {
         if (!routerSelect) return;
@@ -26,8 +30,19 @@
             if (id) {
                 checkStatus(id);
                 hideResult();
+                hideCheck();
             }
         });
+
+        if (checkBtn) {
+            checkBtn.addEventListener('click', function () {
+                handleCheck();
+            });
+        }
+
+        if (voucherInput) {
+            voucherInput.addEventListener('input', hideCheck);
+        }
 
         if (resetForm) {
             resetForm.addEventListener('submit', function (e) {
@@ -39,6 +54,7 @@
         if (tryAgainBtn) {
             tryAgainBtn.addEventListener('click', function () {
                 hideResult();
+                hideCheck();
                 if (voucherCard) voucherCard.style.display = '';
                 resetForm.style.display = '';
                 voucherInput.value = '';
@@ -65,6 +81,110 @@
             });
     }
 
+    /* ---------- Check voucher (read only) ---------- */
+
+    function handleCheck() {
+        if (isChecking) return;
+
+        var routerId = routerSelect.value;
+        var voucher = voucherInput.value.trim();
+
+        if (!routerId) {
+            routerSelect.focus();
+            return;
+        }
+        if (!voucher) {
+            voucherInput.focus();
+            return;
+        }
+
+        isChecking = true;
+        checkBtn.disabled = true;
+        checkBtn.innerHTML = '<span class="spinner spinner-dark"></span> Checking...';
+        hideResult();
+
+        var formData = new FormData();
+        formData.append('router_id', routerId);
+        formData.append('voucher', voucher);
+
+        fetch('api/check.php', { method: 'POST', body: formData })
+            .then(function (res) { return res.json(); })
+            .then(function (data) { renderCheck(data); })
+            .catch(function () {
+                renderCheck({
+                    success: false,
+                    type: 'error',
+                    message: 'Network error. Please check your connection and try again.',
+                });
+            })
+            .finally(function () {
+                isChecking = false;
+                checkBtn.disabled = false;
+                checkBtn.innerHTML = 'Check Voucher';
+            });
+    }
+
+    function esc(value) {
+        return String(value === undefined || value === null ? '' : value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    function renderCheck(data) {
+        var html;
+
+        if (!data || !data.success) {
+            html = '<div class="check-head">'
+                 + '<div class="check-title">' + (data && data.type === 'not_found' ? 'Voucher not found' : 'Could not check') + '</div>'
+                 + '</div>'
+                 + '<p class="check-error">' + esc(data && data.message ? data.message : 'Unknown error.') + '</p>';
+            checkCard.className = 'check-card check-' + ((data && data.type) || 'error');
+        } else {
+            var rows = '';
+            (data.details || []).forEach(function (d) {
+                rows += '<div class="check-row"><span>' + esc(d.label) + '</span><strong>' + esc(d.value) + '</strong></div>';
+            });
+
+            html = '<div class="check-head">'
+                 + '<div>'
+                 + '<div class="check-title">' + esc(data.voucher) + '</div>'
+                 + '<div class="check-sub">' + esc(data.router) + '</div>'
+                 + '</div>'
+                 + '<span class="check-badge">' + esc(data.statusLabel) + '</span>'
+                 + '</div>'
+                 + '<div class="check-dates">'
+                 + '<div class="check-date">'
+                 + '<div class="check-date-label">Activated on</div>'
+                 + '<div class="check-date-value">' + esc(data.activated.text) + '</div>'
+                 + (data.activated.note ? '<div class="check-date-note">' + esc(data.activated.note) + '</div>' : '')
+                 + '</div>'
+                 + '<div class="check-date">'
+                 + '<div class="check-date-label">Expires on</div>'
+                 + '<div class="check-date-value">' + esc(data.expires.text) + '</div>'
+                 + (data.expires.note ? '<div class="check-date-note">' + esc(data.expires.note) + '</div>' : '')
+                 + '</div>'
+                 + '</div>'
+                 + (rows ? '<div class="check-rows">' + rows + '</div>' : '')
+                 + (data.comment ? '<div class="check-comment">Note on the router: <span>' + esc(data.comment) + '</span></div>' : '');
+
+            checkCard.className = 'check-card check-' + (data.type || 'used');
+        }
+
+        checkCard.innerHTML = html;
+        checkWrapper.classList.add('visible');
+        checkWrapper.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function hideCheck() {
+        if (checkWrapper) {
+            checkWrapper.classList.remove('visible');
+        }
+    }
+
+    /* ---------- Reset ---------- */
+
     function handleReset() {
         if (isSubmitting) return;
 
@@ -83,6 +203,7 @@
         isSubmitting = true;
         resetBtn.disabled = true;
         resetBtn.innerHTML = '<span class="spinner"></span> Processing...';
+        hideCheck();
 
         var formData = new FormData();
         formData.append('router_id', routerId);

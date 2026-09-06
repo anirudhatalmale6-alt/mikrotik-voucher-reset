@@ -148,8 +148,11 @@ class RouterosAPI {
             foreach ($sentence as $word) {
                 $allWords[] = $word;
             }
-            // Stop when we hit !done or !trap or !fatal
-            if (isset($sentence[0]) && ($sentence[0] == '!done' || $sentence[0] == '!trap' || $sentence[0] == '!fatal')) {
+            // Stop at !done (or !fatal, which means the router closed the link).
+            // A !trap is NOT the end - the router still sends its !done after it,
+            // and leaving that behind would desync every later command on the
+            // same connection.
+            if (isset($sentence[0]) && ($sentence[0] == '!done' || $sentence[0] == '!fatal')) {
                 break;
             }
         }

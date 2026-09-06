@@ -81,10 +81,21 @@ $routers = getAllRouters();
                                        spellcheck="false">
                             </div>
 
-                            <button type="submit" id="reset-btn" class="btn btn-primary">
-                                Reset Now
-                            </button>
+                            <div class="btn-row">
+                                <button type="button" id="check-btn" class="btn btn-secondary">
+                                    Check Voucher
+                                </button>
+                                <button type="submit" id="reset-btn" class="btn btn-primary">
+                                    Reset Now
+                                </button>
+                            </div>
+                            <p class="btn-hint">Check first to see the activation and expiry date - it changes nothing on the router.</p>
                         </form>
+                    </div>
+
+                    <!-- Voucher details (hidden until Check Voucher is pressed) -->
+                    <div id="check-wrapper" class="check-wrapper">
+                        <div id="check-card" class="check-card"></div>
                     </div>
 
                     <!-- Step 3: Result (hidden until reset completes) -->

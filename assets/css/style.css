@@ -263,6 +263,81 @@ main { flex: 1; padding: 30px 0 50px; }
 .btn-secondary { background: rgba(255,255,255,0.04); color: var(--text-primary); border: 1px solid var(--border-color); }
 .btn-secondary:hover { background: var(--bg-card-hover); border-color: var(--accent-primary); }
 
+/* ---- Button row under the form ---- */
+.btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.btn-hint { margin-top: 12px; font-size: 12.5px; color: var(--text-muted); text-align: center; line-height: 1.45; }
+
+/* ---- Voucher details card ---- */
+.check-wrapper { display: none; animation: slideDown 0.3s ease; margin-top: 18px; }
+.check-wrapper.visible { display: block; }
+
+.check-card {
+    position: relative;
+    overflow: hidden;
+    max-width: 440px;
+    margin: 0 auto;
+    border-radius: var(--radius);
+    padding: 24px 22px;
+    background: linear-gradient(180deg, rgba(19,28,49,.82) 0%, rgba(23,33,54,.82) 100%);
+    backdrop-filter: blur(7px);
+    -webkit-backdrop-filter: blur(7px);
+    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow);
+}
+.check-card::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0; height: 3px;
+    background: linear-gradient(90deg, transparent, var(--gradient-start), var(--v-cyan), var(--gradient-mid), transparent);
+}
+.check-card.check-expired::before,
+.check-card.check-error::before { background: linear-gradient(90deg, transparent, var(--danger), transparent); }
+.check-card.check-online::before { background: linear-gradient(90deg, transparent, var(--success), transparent); }
+.check-card.check-not_found::before,
+.check-card.check-disabled::before { background: linear-gradient(90deg, transparent, var(--warning), transparent); }
+
+.check-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
+.check-title { font-size: 19px; font-weight: 700; letter-spacing: 0.3px; word-break: break-all; }
+.check-sub { font-size: 12.5px; color: var(--text-muted); margin-top: 2px; }
+
+.check-badge {
+    flex-shrink: 0;
+    padding: 5px 12px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    background: rgba(124, 92, 255, 0.16);
+    color: #a78bfa;
+    border: 1px solid rgba(124, 92, 255, 0.32);
+    white-space: nowrap;
+}
+.check-online .check-badge { background: rgba(34, 197, 94, 0.14); color: var(--success); border-color: rgba(34, 197, 94, 0.32); }
+.check-expired .check-badge { background: rgba(244, 63, 94, 0.12); color: var(--danger); border-color: rgba(244, 63, 94, 0.3); }
+.check-disabled .check-badge { background: rgba(245, 158, 11, 0.12); color: var(--warning); border-color: rgba(245, 158, 11, 0.3); }
+
+.check-dates { display: grid; gap: 12px; margin-bottom: 18px; }
+.check-date {
+    background: rgba(12, 21, 38, 0.6);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-sm);
+    padding: 13px 15px;
+}
+.check-date-label { font-size: 11.5px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 4px; }
+.check-date-value { font-size: 17px; font-weight: 600; color: var(--text-primary); }
+.check-date-note { font-size: 12px; color: var(--text-secondary); margin-top: 5px; line-height: 1.45; }
+
+.check-rows { border-top: 1px solid var(--border-soft); padding-top: 6px; }
+.check-row { display: flex; justify-content: space-between; gap: 14px; padding: 8px 0; font-size: 13.5px; border-bottom: 1px solid rgba(148, 163, 184, 0.07); }
+.check-row:last-child { border-bottom: none; }
+.check-row span { color: var(--text-secondary); }
+.check-row strong { font-weight: 600; text-align: right; word-break: break-word; }
+
+.check-comment { margin-top: 14px; font-size: 12.5px; color: var(--text-muted); line-height: 1.5; }
+.check-comment span { color: var(--text-secondary); font-family: 'SFMono-Regular', Consolas, monospace; }
+
+.check-error { font-size: 14.5px; color: var(--text-secondary); line-height: 1.5; }
+
+.spinner-dark { border-color: rgba(148, 163, 184, 0.28); border-top-color: var(--text-primary); }
+
 /* ---- Result Messages ---- */
 .result-wrapper { display: none; animation: slideDown 0.3s ease; margin-top: 18px; }
 .result-wrapper.visible { display: block; }
@@ -355,6 +430,9 @@ main { flex: 1; padding: 30px 0 50px; }
 /* ---- Responsive ---- */
 @media (max-width: 600px) {
     .voucher-card { padding: 24px 18px; }
+    .btn-row { grid-template-columns: 1fr; }
+    .check-card { padding: 20px 16px; }
+    .check-head { flex-direction: column; align-items: flex-start; }
     .result-card { padding: 32px 18px; }
     .table-wrapper { overflow-x: auto; }
     .table-wrapper table { min-width: 620px; }
